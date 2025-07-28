@@ -1,0 +1,399 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrastyle %}
+<style>
+    .dashboard-container {
+        padding: 20px;
+        background: #f8f9fa;
+        min-height: 100vh;
+    }
+    
+    .dashboard-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 30px;
+        border-radius: 10px;
+        margin-bottom: 30px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    
+    .dashboard-header h1 {
+        margin: 0;
+        font-size: 2.5em;
+        font-weight: 300;
+    }
+    
+    .dashboard-header p {
+        margin: 10px 0 0 0;
+        opacity: 0.9;
+        font-size: 1.1em;
+    }
+    
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 20px;
+        margin-bottom: 30px;
+    }
+    
+    .stat-card {
+        background: white;
+        padding: 25px;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        border-left: 4px solid #667eea;
+    }
+    
+    .stat-card.positive {
+        border-left-color: #28a745;
+    }
+    
+    .stat-card.negative {
+        border-left-color: #dc3545;
+    }
+    
+    .stat-card.warning {
+        border-left-color: #ffc107;
+    }
+    
+    .stat-title {
+        font-size: 0.9em;
+        color: #6c757d;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 10px;
+    }
+    
+    .stat-value {
+        font-size: 2em;
+        font-weight: bold;
+        color: #333;
+        margin-bottom: 5px;
+    }
+    
+    .stat-subtitle {
+        font-size: 0.9em;
+        color: #6c757d;
+    }
+    
+    .content-grid {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 30px;
+        margin-bottom: 30px;
+    }
+    
+    .expenses-section {
+        background: white;
+        padding: 25px;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .expenses-section h3 {
+        margin-top: 0;
+        color: #333;
+        border-bottom: 2px solid #f8f9fa;
+        padding-bottom: 10px;
+    }
+    
+    .expense-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 15px 0;
+        border-bottom: 1px solid #f8f9fa;
+    }
+    
+    .expense-item:last-child {
+        border-bottom: none;
+    }
+    
+    .expense-info {
+        flex: 1;
+    }
+    
+    .expense-description {
+        font-weight: 500;
+        color: #333;
+    }
+    
+    .expense-details {
+        font-size: 0.9em;
+        color: #6c757d;
+        margin-top: 5px;
+    }
+    
+    .expense-amount {
+        font-weight: bold;
+        color: #dc3545;
+    }
+    
+    .recommendations-section {
+        background: white;
+        padding: 25px;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .recommendations-section h3 {
+        margin-top: 0;
+        color: #333;
+        border-bottom: 2px solid #f8f9fa;
+        padding-bottom: 10px;
+    }
+    
+    .recommendation-item {
+        background: #f8f9fa;
+        padding: 15px;
+        margin-bottom: 10px;
+        border-radius: 5px;
+        border-left: 4px solid #28a745;
+    }
+    
+    .recommendation-item:last-child {
+        margin-bottom: 0;
+    }
+    
+    .balance-indicator {
+        display: inline-block;
+        padding: 5px 15px;
+        border-radius: 20px;
+        font-weight: bold;
+        font-size: 0.9em;
+    }
+    
+    .balance-positive {
+        background: #d4edda;
+        color: #155724;
+    }
+    
+    .balance-negative {
+        background: #f8d7da;
+        color: #721c24;
+    }
+    
+    .balance-neutral {
+        background: #fff3cd;
+        color: #856404;
+    }
+    
+    .quick-actions {
+        background: white;
+        padding: 25px;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin-bottom: 30px;
+    }
+    
+    .quick-actions h3 {
+        margin-top: 0;
+        color: #333;
+        border-bottom: 2px solid #f8f9fa;
+        padding-bottom: 10px;
+    }
+    
+    .action-buttons {
+        display: flex;
+        gap: 15px;
+        flex-wrap: wrap;
+    }
+    
+    .action-button {
+        background: #667eea;
+        color: white;
+        padding: 12px 20px;
+        border-radius: 5px;
+        text-decoration: none;
+        font-weight: 500;
+        transition: background 0.3s;
+    }
+    
+    .action-button:hover {
+        background: #5a6fd8;
+        color: white;
+        text-decoration: none;
+    }
+    
+    .action-button.secondary {
+        background: #6c757d;
+    }
+    
+    .action-button.secondary:hover {
+        background: #5a6268;
+    }
+    
+    @media (max-width: 768px) {
+        .content-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .stats-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .action-buttons {
+            flex-direction: column;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <!-- Dashboard Header -->
+    <div class="dashboard-header">
+        <h1>💰 Personal Financial Dashboard</h1>
+        <p>{{ current_month }}/{{ current_year }} - Financial Overview</p>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="quick-actions">
+        <h3>🚀 Quick Actions</h3>
+        <div class="action-buttons">
+            <a href="{% url 'admin:finance_variablepayment_add' %}" class="action-button">
+                ➕ Add Expense
+            </a>
+            <a href="{% url 'admin:finance_fixedpayment_add' %}" class="action-button">
+                🔄 Add Fixed Payment
+            </a>
+            <a href="{% url 'admin:finance_creditcard_add' %}" class="action-button">
+                💳 Add Credit Card
+            </a>
+            <a href="{% url 'admin:finance_exchangerate_add' %}" class="action-button secondary">
+                💱 Add Exchange Rate
+            </a>
+        </div>
+    </div>
+
+    <!-- Statistics Grid -->
+    <div class="stats-grid">
+        <!-- Monthly Income -->
+        <div class="stat-card positive">
+            <div class="stat-title">Monthly Income</div>
+            <div class="stat-value">{{ monthly_income|floatformat:2 }} {{ profile.base_currency|default:"EUR" }}</div>
+            <div class="stat-subtitle">Base currency</div>
+        </div>
+
+        <!-- Monthly Expenses -->
+        <div class="stat-card negative">
+            <div class="stat-title">Monthly Expenses</div>
+            <div class="stat-value">{{ total_expenses|floatformat:2 }}</div>
+            <div class="stat-subtitle">{{ monthly_expenses_count }} transactions</div>
+        </div>
+
+        <!-- Total Fees -->
+        <div class="stat-card warning">
+            <div class="stat-title">Total Fees & Taxes</div>
+            <div class="stat-value">{{ total_fees|floatformat:2 }}</div>
+            <div class="stat-subtitle">FX: {{ total_fx_fees|floatformat:2 }} | IOF: {{ total_iof_fees|floatformat:2 }}</div>
+        </div>
+
+        <!-- Monthly Balance -->
+        <div class="stat-card {% if monthly_balance >= 0 %}positive{% else %}negative{% endif %}">
+            <div class="stat-title">Monthly Balance</div>
+            <div class="stat-value">{{ monthly_balance|floatformat:2 }} {{ profile.base_currency|default:"EUR" }}</div>
+            <div class="stat-subtitle">
+                <span class="balance-indicator {% if monthly_balance > 0 %}balance-positive{% elif monthly_balance < 0 %}balance-negative{% else %}balance-neutral{% endif %}">
+                    {% if monthly_balance > 0 %}💰 Surplus{% elif monthly_balance < 0 %}⚠️ Deficit{% else %}⚖️ Balanced{% endif %}
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Content Grid -->
+    <div class="content-grid">
+        <!-- Expenses Section -->
+        <div class="expenses-section">
+            <h3>📊 Recent Expenses ({{ current_month }}/{{ current_year }})</h3>
+            
+            {% if expenses_by_country %}
+                {% for expense in expenses_by_country %}
+                <div class="expense-item">
+                    <div class="expense-info">
+                        <div class="expense-description">{{ expense.country }} - {{ expense.currency }}</div>
+                        <div class="expense-details">
+                            Total: {{ expense.total_amount|floatformat:2 }} {{ expense.currency }}
+                            {% if expense.total_fees > 0 %}
+                                (Fees: {{ expense.total_fees|floatformat:2 }})
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="expense-amount">
+                        {{ expense.total_amount|floatformat:2 }} {{ expense.currency }}
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <p style="color: #6c757d; text-align: center; padding: 20px;">
+                    No expenses recorded for this month yet.
+                </p>
+            {% endif %}
+            
+            {% if fixed_payments %}
+                <h4 style="margin-top: 30px; color: #333;">🔄 Active Fixed Payments</h4>
+                {% for payment in fixed_payments %}
+                <div class="expense-item">
+                    <div class="expense-info">
+                        <div class="expense-description">{{ payment.description }}</div>
+                        <div class="expense-details">
+                            {{ payment.country }} - {{ payment.frequency }} - {{ payment.currency }}
+                        </div>
+                    </div>
+                    <div class="expense-amount">
+                        {{ payment.amount|floatformat:2 }} {{ payment.currency }}
+                    </div>
+                </div>
+                {% endfor %}
+            {% endif %}
+        </div>
+
+        <!-- Recommendations Section -->
+        <div class="recommendations-section">
+            <h3>💡 Investment Recommendations</h3>
+            
+            {% if investment_recommendations %}
+                {% for recommendation in investment_recommendations %}
+                <div class="recommendation-item">
+                    ✅ {{ recommendation }}
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="recommendation-item">
+                    💡 Focus on reducing expenses to create positive cash flow
+                </div>
+                <div class="recommendation-item">
+                    📊 Track your spending patterns to identify savings opportunities
+                </div>
+                <div class="recommendation-item">
+                    🎯 Set up a budget to better manage your finances
+                </div>
+            {% endif %}
+            
+            {% if monthly_balance < 0 %}
+                <div class="recommendation-item" style="border-left-color: #dc3545;">
+                    ⚠️ Consider reducing expenses or increasing income to avoid deficit
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Additional Information -->
+    {% if profile %}
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-title">Profile Information</div>
+            <div class="stat-value">{{ profile.name }}</div>
+            <div class="stat-subtitle">Base Currency: {{ profile.base_currency }}</div>
+        </div>
+        
+        <div class="stat-card">
+            <div class="stat-title">Income Breakdown</div>
+            <div class="stat-value">{{ profile.monthly_income_brl|floatformat:2 }} BRL</div>
+            <div class="stat-subtitle">{{ profile.monthly_income_eur|floatformat:2 }} EUR</div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %} 
