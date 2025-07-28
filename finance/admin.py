@@ -1,13 +1,5 @@
 from django.contrib import admin
-from django.db.models import Sum, Q
 from django.utils.html import format_html
-from django.urls import reverse
-from django.utils.safestring import mark_safe
-from django.contrib.admin import SimpleListFilter
-from django.utils import timezone
-from datetime import datetime, timedelta
-from decimal import Decimal
-from django.contrib.admin.sites import AdminSite
 from .models import (
     UserFinancialProfile, 
     CreditCard, 
@@ -114,9 +106,7 @@ class VariablePaymentAdmin(admin.ModelAdmin):
 
         if total != base:
             return format_html(
-                '<span style="color: #d9534f;">{:.2f}</span> <small>(+{:.2f} fees)</small>',
-                float(total),
-                float(total - base)
+                f'<span style="color: #d9534f;">{float(total)}</span> <small>(+{float(total - base)} fees)</small>',                
             )
         return "{:.2f}".format(float(total))
 
@@ -150,13 +140,13 @@ class UserFinancialProfileAdmin(admin.ModelAdmin):
 class PaymentStatusAdmin(admin.ModelAdmin):
     list_display = [
         'payment_description', 'month_year', 'due_date', 'status', 'is_paid', 
-        'expected_amount', 'currency', 'payment_country'
+        'expected_amount', 'actual_amount', 'currency', 'payment_country'
     ]
     list_filter = [
         'status', 'is_paid', 'payment_type', 'currency', 
         'month_year', 'due_date'
     ]
-    search_fields = ['payment_description', 'notes']
+    search_fields = ['notes']
     readonly_fields = ['created_at', 'updated_at', 'payment_description', 'payment_country']
     date_hierarchy = 'month_year'
     list_editable = ['is_paid', 'status']
