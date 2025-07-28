@@ -157,12 +157,29 @@ class FinancialSummarySerializer(serializers.Serializer):
 class DashboardSerializer(serializers.Serializer):
     """Serializer for dashboard data."""
     
-    profile = UserFinancialProfileSerializer()
+    profile = UserFinancialProfileSerializer(required=False, allow_null=True)
     summary = FinancialSummarySerializer()
     recent_expenses = VariablePaymentSerializer(many=True)
     active_fixed_payments = FixedPaymentSerializer(many=True)
     credit_cards = CreditCardSerializer(many=True)
     exchange_rates = ExchangeRateSerializer(many=True)
+    
+    def to_representation(self, instance):
+        """Custom representation to handle dictionary data."""
+        data = super().to_representation(instance)
+        
+        # Handle the summary data which contains dictionaries
+        if 'summary' in data and isinstance(data['summary'], dict):
+            summary_data = data['summary']
+            # Convert dictionary lists to proper format
+            if 'expenses_by_country' in summary_data:
+                summary_data['expenses_by_country'] = list(summary_data['expenses_by_country'])
+            if 'expenses_by_category' in summary_data:
+                summary_data['expenses_by_category'] = list(summary_data['expenses_by_category'])
+            if 'expenses_by_currency' in summary_data:
+                summary_data['expenses_by_currency'] = list(summary_data['expenses_by_currency'])
+        
+        return data
 
 
 # Statistics serializers

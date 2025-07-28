@@ -467,8 +467,7 @@ class DashboardViewSet(viewsets.ViewSet):
             ).data,
         }
         
-        serializer = DashboardSerializer(data)
-        return Response(serializer.data)
+        return Response(data)
     
     @action(detail=False, methods=['get'])
     def monthly_report(self, request):
