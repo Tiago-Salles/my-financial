@@ -6,7 +6,8 @@ from .models import (
     ExchangeRate,
     FixedPayment,
     VariablePayment,
-    PaymentStatus
+    PaymentStatus,
+    CreditCardInvoice
 )
 
 
@@ -87,18 +88,63 @@ class VariablePaymentSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at', 'updated_at', 'fx_fee_amount', 'iof_amount']
 
 
+class CreditCardInvoiceSerializer(serializers.ModelSerializer):
+    """Serializer for credit card invoices."""
+    
+    credit_card = CreditCardSerializer(read_only=True)
+    credit_card_id = serializers.PrimaryKeyRelatedField(
+        queryset=CreditCard.objects.all(),
+        source='credit_card',
+        required=True
+    )
+    total_amount = serializers.ReadOnlyField()
+    purchases_count = serializers.ReadOnlyField()
+    total_with_fees = serializers.ReadOnlyField()
+    billing_period_days = serializers.ReadOnlyField()
+    
+    class Meta:
+        model = CreditCardInvoice
+        fields = [
+            'id', 'credit_card', 'credit_card_id', 'start_date', 'end_date',
+            'is_closed', 'total_amount', 'purchases_count', 'total_with_fees',
+            'billing_period_days', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['created_at', 'updated_at', 'total_amount', 'purchases_count']
+
+
+class CreditCardInvoiceDetailSerializer(CreditCardInvoiceSerializer):
+    """Detailed serializer for credit card invoices with payment statuses."""
+    
+    payment_statuses = serializers.SerializerMethodField()
+    
+    class Meta(CreditCardInvoiceSerializer.Meta):
+        fields = CreditCardInvoiceSerializer.Meta.fields + ['payment_statuses']
+    
+    def get_payment_statuses(self, obj):
+        """Get payment statuses for this invoice."""
+        payment_statuses = obj.payment_statuses.all()
+        return PaymentStatusSerializer(payment_statuses, many=True).data
+
+
 class PaymentStatusSerializer(serializers.ModelSerializer):
     """Serializer for payment status tracking."""
     
     payment_description = serializers.ReadOnlyField()
     payment_country = serializers.ReadOnlyField()
     is_overdue = serializers.ReadOnlyField()
+    credit_card_invoice = CreditCardInvoiceSerializer(read_only=True)
+    credit_card_invoice_id = serializers.PrimaryKeyRelatedField(
+        queryset=CreditCardInvoice.objects.all(),
+        source='credit_card_invoice',
+        required=False,
+        allow_null=True
+    )
     
     class Meta:
         model = PaymentStatus
         fields = [
-            'id', 'fixed_payment', 'variable_payment', 'payment_type',
-            'month_year', 'due_date', 'status', 'is_paid', 'paid_date',
+            'id', 'fixed_payment', 'variable_payment', 'credit_card_invoice', 'credit_card_invoice_id',
+            'payment_type', 'month_year', 'due_date', 'status', 'is_paid', 'paid_date',
             'expected_amount', 'actual_amount', 'currency', 'notes',
             'payment_description', 'payment_country', 'is_overdue',
             'created_at', 'updated_at'

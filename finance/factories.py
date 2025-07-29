@@ -10,7 +10,8 @@ from .models import (
     ExchangeRate,
     FixedPayment,
     VariablePayment,
-    PaymentStatus
+    PaymentStatus,
+    CreditCardInvoice
 )
 
 
@@ -235,17 +236,49 @@ class RealisticExchangeRateFactory(ExchangeRateFactory):
             self.rate = Decimal(random.uniform(0.1, 10.0)).quantize(Decimal('0.000001'))
 
 
+class CreditCardInvoiceFactory(DjangoModelFactory):
+    """Factory for creating credit card invoices."""
+    
+    class Meta:
+        model = CreditCardInvoice
+    
+    credit_card = factory.SubFactory(CreditCardFactory)
+    
+    # Create realistic billing periods (monthly)
+    start_date = factory.LazyFunction(lambda: date.today().replace(day=1))
+    end_date = factory.LazyFunction(lambda: 
+        (date.today().replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+    )
+    
+    # Most invoices are open, some are closed
+    is_closed = factory.Iterator([False, False, False, True])  # 75% open invoices
+    
+
+
+
+class OpenCreditCardInvoiceFactory(CreditCardInvoiceFactory):
+    """Factory for open credit card invoices."""
+    
+    is_closed = False
+
+
+class ClosedCreditCardInvoiceFactory(CreditCardInvoiceFactory):
+    """Factory for closed credit card invoices."""
+    
+    is_closed = True
+
+
 class PaymentStatusFactory(DjangoModelFactory):
     """Factory for creating payment status records."""
     
     class Meta:
         model = PaymentStatus
     
-    # Randomly choose between fixed and variable payment
-    payment_type = factory.Iterator(['fixed', 'variable'])
+    # Randomly choose between fixed, variable, and credit card payment
+    payment_type = factory.Iterator(['fixed', 'variable', 'credit_card'])
     
     # Month and year for the payment
-    month_year = factory.LazyFunction(lambda: date.today().replace(day=1))
+    month_year = factory.LazyFunction(lambda: date.today().replace(day=1) - timedelta(days=random.randint(0, 365)))
     due_date = factory.LazyFunction(lambda: date.today() + timedelta(days=random.randint(1, 30)))
     
     # Status and payment tracking
@@ -271,19 +304,25 @@ class PaymentStatusFactory(DjangoModelFactory):
     
     @factory.post_generation
     def link_payment(self, create, extracted, **kwargs):
-        """Link to either a fixed or variable payment."""
+        """Link to either a fixed, variable, or credit card invoice payment."""
         if self.payment_type == 'fixed':
             # Create or get a fixed payment
             if not hasattr(self, 'fixed_payment') or not self.fixed_payment:
                 self.fixed_payment = FixedPaymentFactory()
                 self.expected_amount = self.fixed_payment.amount
                 self.currency = self.fixed_payment.currency
-        else:
+        elif self.payment_type == 'variable':
             # Create or get a variable payment
             if not hasattr(self, 'variable_payment') or not self.variable_payment:
                 self.variable_payment = VariablePaymentFactory()
                 self.expected_amount = self.variable_payment.amount
                 self.currency = self.variable_payment.currency
+        elif self.payment_type == 'credit_card':
+            # Create or get a credit card invoice
+            if not hasattr(self, 'credit_card_invoice') or not self.credit_card_invoice:
+                self.credit_card_invoice = CreditCardInvoiceFactory()
+                self.expected_amount = self.credit_card_invoice.total_amount
+                self.currency = self.credit_card_invoice.credit_card.currency
 
 
 class FixedPaymentStatusFactory(PaymentStatusFactory):
@@ -311,4 +350,18 @@ class VariablePaymentStatusFactory(PaymentStatusFactory):
         """Set expected amount and currency from variable payment."""
         if self.variable_payment:
             self.expected_amount = self.variable_payment.amount
-            self.currency = self.variable_payment.currency 
+            self.currency = self.variable_payment.currency
+
+
+class CreditCardInvoicePaymentStatusFactory(PaymentStatusFactory):
+    """Factory for payment status linked to credit card invoices."""
+    
+    payment_type = 'credit_card'
+    credit_card_invoice = factory.SubFactory(CreditCardInvoiceFactory)
+    
+    @factory.post_generation
+    def set_credit_card_invoice_data(self, create, extracted, **kwargs):
+        """Set expected amount and currency from credit card invoice."""
+        if self.credit_card_invoice:
+            self.expected_amount = self.credit_card_invoice.total_amount
+            self.currency = self.credit_card_invoice.credit_card.currency 
