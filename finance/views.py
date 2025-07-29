@@ -12,7 +12,8 @@ from .models import (
     ExchangeRate,
     FixedPayment,
     VariablePayment,
-    PaymentStatus
+    PaymentStatus,
+    CreditCardInvoice
 )
 from .serializers import (
     UserFinancialProfileSerializer,
@@ -24,6 +25,8 @@ from .serializers import (
     VariablePaymentDetailSerializer,
     PaymentStatusSerializer,
     PaymentStatusDetailSerializer,
+    CreditCardInvoiceSerializer,
+    CreditCardInvoiceDetailSerializer,
     FinancialSummarySerializer,
     DashboardSerializer,
     ExpenseStatisticsSerializer,
@@ -374,6 +377,84 @@ class PaymentStatusViewSet(viewsets.ModelViewSet):
             ).aggregate(
                 total=Sum('actual_amount')
             )['total'] or Decimal('0'),
+        }
+        
+        return Response(summary)
+
+
+class CreditCardInvoiceViewSet(viewsets.ModelViewSet):
+    """ViewSet for credit card invoices."""
+    
+    queryset = CreditCardInvoice.objects.all()
+    serializer_class = CreditCardInvoiceSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['credit_card__cardholder_name', 'credit_card__final_digits']
+    ordering_fields = ['start_date', 'end_date', 'is_closed', 'created_at']
+    ordering = ['-end_date', '-start_date']
+    
+    def get_serializer_class(self):
+        if self.action == 'retrieve':
+            return CreditCardInvoiceDetailSerializer
+        return CreditCardInvoiceSerializer
+    
+    def get_queryset(self):
+        """Optimize queryset with select_related."""
+        return CreditCardInvoice.objects.select_related('credit_card')
+    
+    @action(detail=True, methods=['post'])
+    def close_invoice(self, request, pk=None):
+        """Close the invoice and create the next one."""
+        invoice = self.get_object()
+        if invoice.is_closed:
+            return Response(
+                {'error': 'Invoice is already closed'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        invoice.close_invoice()
+        serializer = self.get_serializer(invoice)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def open(self, request):
+        """Get only open invoices."""
+        open_invoices = self.get_queryset().filter(is_closed=False)
+        serializer = self.get_serializer(open_invoices, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def closed(self, request):
+        """Get only closed invoices."""
+        closed_invoices = self.get_queryset().filter(is_closed=True)
+        serializer = self.get_serializer(closed_invoices, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def by_credit_card(self, request):
+        """Get invoices for a specific credit card."""
+        credit_card_id = request.query_params.get('credit_card_id')
+        if not credit_card_id:
+            return Response(
+                {'error': 'credit_card_id parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        invoices = self.get_queryset().filter(credit_card_id=credit_card_id)
+        serializer = self.get_serializer(invoices, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def summary(self, request):
+        """Get invoice summary statistics."""
+        queryset = self.get_queryset()
+        
+        summary = {
+            'total_invoices': queryset.count(),
+            'open_invoices': queryset.filter(is_closed=False).count(),
+            'closed_invoices': queryset.filter(is_closed=True).count(),
+            'total_amount_open': sum(invoice.total_amount for invoice in queryset.filter(is_closed=False)),
+            'total_amount_closed': sum(invoice.total_amount for invoice in queryset.filter(is_closed=True)),
         }
         
         return Response(summary)

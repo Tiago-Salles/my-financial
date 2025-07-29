@@ -1,9 +1,8 @@
 from django.db import models
 from django.contrib.auth.models import User
-from django.core.validators import MinValueValidator
 from django.utils import timezone
 from decimal import Decimal
-import uuid
+from datetime import timedelta
 
 
 class UserFinancialProfile(models.Model):
@@ -183,6 +182,7 @@ class PaymentStatus(models.Model):
     PAYMENT_TYPE_CHOICES = [
         ('fixed', 'Fixed Payment'),
         ('variable', 'Variable Payment'),
+        ('credit_card', 'Credit Card Payment'),
     ]
     
     STATUS_CHOICES = [
@@ -195,9 +195,10 @@ class PaymentStatus(models.Model):
     # Reference to the actual payment
     fixed_payment = models.ForeignKey(FixedPayment, on_delete=models.CASCADE, null=True, blank=True)
     variable_payment = models.ForeignKey(VariablePayment, on_delete=models.CASCADE, null=True, blank=True)
+    credit_card_invoice = models.ForeignKey('CreditCardInvoice', on_delete=models.CASCADE, null=True, blank=True, related_name='payment_statuses')
     
     # Payment tracking fields
-    payment_type = models.CharField(max_length=10, choices=PAYMENT_TYPE_CHOICES)
+    payment_type = models.CharField(max_length=15, choices=PAYMENT_TYPE_CHOICES)
     month_year = models.DateField(help_text="Month and year this payment is due (e.g., 2024-01-01 for January 2024)")
     due_date = models.DateField(help_text="Specific due date for this payment")
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
@@ -215,9 +216,12 @@ class PaymentStatus(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
+        verbose_name = 'Payment Status'
+        verbose_name_plural = 'Payment Statuses'
         unique_together = [
             ['fixed_payment', 'month_year'],
-            ['variable_payment', 'month_year']
+            ['variable_payment', 'month_year'],
+            ['credit_card_invoice', 'month_year']
         ]
         ordering = ['due_date', 'payment_type']
     
@@ -231,6 +235,10 @@ class PaymentStatus(models.Model):
             self.payment_type = 'variable'
             self.expected_amount = self.variable_payment.amount
             self.currency = self.variable_payment.currency
+        elif self.credit_card_invoice:
+            self.payment_type = 'credit_card'
+            self.expected_amount = self.credit_card_invoice.total_with_fees
+            self.currency = self.credit_card_invoice.credit_card.currency
         
         # Update status based on is_paid
         if self.is_paid:
@@ -255,6 +263,8 @@ class PaymentStatus(models.Model):
             return self.fixed_payment.description
         elif self.variable_payment:
             return self.variable_payment.description
+        elif self.credit_card_invoice:
+            return f"Credit Card Invoice - {self.credit_card_invoice.credit_card.cardholder_name}"
         return "Unknown Payment"
     
     @property
@@ -264,6 +274,8 @@ class PaymentStatus(models.Model):
             return self.fixed_payment.country
         elif self.variable_payment:
             return self.variable_payment.country
+        elif self.credit_card_invoice:
+            return self.credit_card_invoice.credit_card.issuer_country
         return "Unknown"
     
     @property
@@ -276,3 +288,152 @@ class PaymentStatus(models.Model):
         month_year = self.month_year.strftime('%B %Y')
         status = self.get_status_display()
         return f"{payment_desc} - {month_year} ({status})"
+
+
+class CreditCardInvoice(models.Model):
+    """
+    Model to track credit card invoices with billing periods.
+    Each invoice represents a billing cycle for a specific credit card.
+    """
+    credit_card = models.ForeignKey(CreditCard, on_delete=models.CASCADE, related_name='invoices')
+    start_date = models.DateField(help_text="Start date of the billing period")
+    end_date = models.DateField(help_text="End date of the billing period")
+    is_closed = models.BooleanField(default=False, help_text="Whether this invoice is closed")
+    # Note: total_amount and purchases_count are calculated properties, not stored fields
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = 'Credit Card Invoice'
+        verbose_name_plural = 'Credit Card Invoices'
+        unique_together = ['credit_card', 'start_date', 'end_date']
+        ordering = ['-end_date', '-start_date']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['credit_card'],
+                condition=models.Q(is_closed=False),
+                name='unique_open_invoice_per_credit_card'
+            )
+        ]
+    
+    def __str__(self):
+        return f"{self.credit_card} - {self.start_date} to {self.end_date} ({'Closed' if self.is_closed else 'Open'})"
+    
+    @property
+    def total_amount(self):
+        """Total amount of all payment statuses in this invoice."""
+        return self.payment_statuses.aggregate(total=models.Sum('expected_amount'))['total'] or Decimal('0')
+    
+    @property
+    def purchases_count(self):
+        """Number of payment statuses in this invoice."""
+        return self.payment_statuses.count()
+    
+    @property
+    def total_with_fees(self):
+        """Total amount (same as total_amount for invoices)."""
+        return self.total_amount
+    
+    @property
+    def billing_period_days(self):
+        """Number of days in the billing period."""
+        return (self.end_date - self.start_date).days + 1
+    
+    def recalculate_totals(self):
+        """Recalculate totals based on associated payment statuses."""
+        # This method is kept for compatibility but totals are now calculated via properties
+        pass
+    
+    def close_invoice(self):
+        """Close the invoice and create the next one."""
+        if not self.is_closed:
+            self.is_closed = True
+            self.save(update_fields=['is_closed'])
+            
+            # Create next invoice automatically
+            self.create_next_invoice()
+    
+    def save(self, *args, **kwargs):
+        """Override save to ensure only one open invoice per credit card and handle closing."""
+        # Check if this is an update and is_closed is being set to True
+        if self.pk:  # This is an update
+            try:
+                old_instance = CreditCardInvoice.objects.get(pk=self.pk)
+                if not old_instance.is_closed and self.is_closed:
+                    # is_closed is being changed from False to True
+                    # First save the current state
+                    super().save(*args, **kwargs)
+                    # Then create the next invoice
+                    self.create_next_invoice()
+                    return
+            except CreditCardInvoice.DoesNotExist:
+                pass
+        
+        if not self.is_closed:
+            # Close any other open invoices for this credit card
+            CreditCardInvoice.objects.filter(
+                credit_card=self.credit_card,
+                is_closed=False
+            ).exclude(id=self.id).update(is_closed=True)
+        
+        super().save(*args, **kwargs)
+    
+    def create_next_invoice(self):
+        """Create the next invoice for this credit card."""
+        # Calculate next billing period
+        # Next period starts the day after current end_date
+        next_start_date = self.end_date + timedelta(days=1)
+        
+        # Calculate next end date (last day of next month)
+        # For example: if next_start_date is 2025-08-01, we want end_date to be 2025-08-31
+        if next_start_date.month == 12:
+            next_year = next_start_date.year + 1
+            next_month = 1
+        else:
+            next_year = next_start_date.year
+            next_month = next_start_date.month + 1
+        
+        # Calculate the last day of the next month
+        if next_month == 12:
+            next_end_date = next_start_date.replace(year=next_year + 1, month=1, day=1) - timedelta(days=1)
+        else:
+            next_end_date = next_start_date.replace(year=next_year, month=next_month, day=1) - timedelta(days=1)
+        
+        # Create the next invoice
+        CreditCardInvoice.objects.create(
+            credit_card=self.credit_card,
+            start_date=next_start_date,
+            end_date=next_end_date,
+            is_closed=False
+        )
+    
+    @classmethod
+    def get_open_invoice_for_card(cls, credit_card):
+        """Get the open invoice for a specific credit card."""
+        return cls.objects.filter(
+            credit_card=credit_card,
+            is_closed=False
+        ).first()
+    
+    @classmethod
+    def get_or_create_open_invoice(cls, credit_card):
+        """Get the open invoice for a credit card or create one if none exists."""
+        open_invoice = cls.get_open_invoice_for_card(credit_card)
+        if not open_invoice:
+            # Create a new invoice for the current month
+            current_date = timezone.now().date()
+            start_date = current_date.replace(day=1)
+            
+            if start_date.month == 12:
+                end_date = start_date.replace(year=start_date.year + 1, month=1, day=1) - timedelta(days=1)
+            else:
+                end_date = start_date.replace(month=start_date.month + 1, day=1) - timedelta(days=1)
+            
+            open_invoice = cls.objects.create(
+                credit_card=credit_card,
+                start_date=start_date,
+                end_date=end_date,
+                is_closed=False
+            )
+        
+        return open_invoice
