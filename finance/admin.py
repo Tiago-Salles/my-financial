@@ -14,8 +14,7 @@ from .models import (
     ExchangeRate, 
     FixedPayment, 
     VariablePayment,
-    PaymentStatus,
-    CreditCardInvoice
+    PaymentStatus
 )
 
 
@@ -146,120 +145,23 @@ class UserFinancialProfileAdmin(admin.ModelAdmin):
     total_monthly_income_display.short_description = 'Total Monthly Income'
 
 
-class PaymentStatusInline(admin.TabularInline):
-    """Inline for payment statuses in credit card invoice admin."""
-    
-    model = PaymentStatus
-    extra = 0
-    readonly_fields = ['payment_type', 'month_year', 'due_date', 'status', 'expected_amount', 'currency', 'payment_description_display']
-    fields = ['payment_type', 'payment_description_display', 'due_date', 'status', 'expected_amount', 'currency', 'notes']
-    
-    def payment_description_display(self, obj):
-        """Get the description of the linked payment."""
-        return obj.payment_description
-    payment_description_display.short_description = 'Description'
-    
-    def has_add_permission(self, request, obj=None):
-        """Disable adding new payment statuses from this inline."""
-        return False
-    
-    def has_delete_permission(self, request, obj=None):
-        """Disable deleting payment statuses from this inline."""
-        return False
-
-
-class CreditCardInvoiceAdmin(admin.ModelAdmin):
-    list_display = [
-        'credit_card', 'start_date', 'end_date', 'is_closed', 
-        'total_amount_display', 'purchases_count_display'
-    ]
-    list_filter = [
-        'credit_card', 'is_closed', 'start_date', 'end_date'
-    ]
-    search_fields = ['credit_card__cardholder_name', 'credit_card__final_digits']
-    readonly_fields = [
-        'created_at', 'updated_at', 'total_amount_display', 'purchases_count_display'
-    ]
-    date_hierarchy = 'start_date'
-    list_editable = ['is_closed']
-    
-    inlines = [PaymentStatusInline]
-    
-    fieldsets = (
-        ('Invoice Information', {
-            'fields': ('credit_card', 'start_date', 'end_date', 'is_closed')
-        }),
-        ('Calculated Totals', {
-            'fields': ('total_amount_display', 'purchases_count_display'),
-            'classes': ('collapse',)
-        }),
-        ('Timestamps', {
-            'fields': ('created_at', 'updated_at'),
-            'classes': ('collapse',)
-        }),
-    )
-    
-    def total_amount_display(self, obj):
-        """Display total amount as a calculated property."""
-        return f"{obj.total_amount:.2f} {obj.credit_card.currency}"
-    total_amount_display.short_description = 'Total Amount'
-    
-    def purchases_count_display(self, obj):
-        """Display purchases count as a calculated property."""
-        return obj.purchases_count
-    purchases_count_display.short_description = 'Payment Count'
-    
-    def get_queryset(self, request):
-        """Optimize queryset with select_related and prefetch_related."""
-        return super().get_queryset(request).select_related('credit_card').prefetch_related('payment_statuses')
-    
-    actions = ['close_selected_invoices', 'recalculate_totals']
-    
-    def close_selected_invoices(self, request, queryset):
-        """Close selected invoices and create next ones."""
-        closed_count = 0
-        for invoice in queryset:
-            if not invoice.is_closed:
-                invoice.close_invoice()
-                closed_count += 1
-        
-        self.message_user(
-            request, 
-            f"Successfully closed {closed_count} invoice(s) and created next billing periods."
-        )
-    close_selected_invoices.short_description = "Close selected invoices"
-    
-    def recalculate_totals(self, request, queryset):
-        """Recalculate totals for selected invoices."""
-        for invoice in queryset:
-            invoice.recalculate_totals()
-        
-        self.message_user(
-            request, 
-            f"Successfully recalculated totals for {queryset.count()} invoice(s)."
-        )
-    recalculate_totals.short_description = "Recalculate totals"
-    
-
-
-
 class PaymentStatusAdmin(admin.ModelAdmin):
     list_display = [
-        'payment_description_display', 'month_year', 'due_date', 'status', 'is_paid', 
-        'expected_amount', 'actual_amount', 'currency', 'payment_country_display', 'payment_type'
+        'payment_description', 'month_year', 'due_date', 'status', 'is_paid', 
+        'expected_amount', 'currency', 'payment_country'
     ]
     list_filter = [
         'status', 'is_paid', 'payment_type', 'currency', 
         'month_year', 'due_date'
     ]
-    search_fields = ['notes']
-    readonly_fields = ['created_at', 'updated_at', 'payment_description_display', 'payment_country_display']
+    search_fields = ['payment_description', 'notes']
+    readonly_fields = ['created_at', 'updated_at', 'payment_description', 'payment_country']
     date_hierarchy = 'month_year'
     list_editable = ['is_paid', 'status']
     
     fieldsets = (
         ('Payment Reference', {
-            'fields': ('fixed_payment', 'variable_payment', 'credit_card_invoice', 'payment_type')
+            'fields': ('fixed_payment', 'variable_payment', 'payment_type')
         }),
         ('Payment Tracking', {
             'fields': ('month_year', 'due_date', 'status', 'is_paid', 'paid_date')
@@ -279,18 +181,18 @@ class PaymentStatusAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         """Optimize queryset with select_related for better performance."""
         return super().get_queryset(request).select_related(
-            'fixed_payment', 'variable_payment', 'credit_card_invoice__credit_card'
+            'fixed_payment', 'variable_payment'
         )
     
-    def payment_description_display(self, obj):
+    def payment_description(self, obj):
         """Display the payment description."""
         return obj.payment_description
-    payment_description_display.short_description = 'Payment Description'
+    payment_description.short_description = 'Payment Description'
     
-    def payment_country_display(self, obj):
+    def payment_country(self, obj):
         """Display the payment country."""
         return obj.payment_country
-    payment_country_display.short_description = 'Country'
+    payment_country.short_description = 'Country'
 
 
 # Register models
@@ -300,4 +202,3 @@ admin.site.register(ExchangeRate, ExchangeRateAdmin)
 admin.site.register(FixedPayment, FixedPaymentAdmin)
 admin.site.register(VariablePayment, VariablePaymentAdmin)
 admin.site.register(PaymentStatus, PaymentStatusAdmin)
-admin.site.register(CreditCardInvoice, CreditCardInvoiceAdmin)
