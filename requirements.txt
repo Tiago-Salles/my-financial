@@ -8,4 +8,5 @@ Faker==37.4.2
 djangorestframework==3.16.0
 django-cors-headers==4.7.0
 djangorestframework-simplejwt==5.5.1
-drf-yasg==1.21.10 
+drf-yasg==1.21.10
+gunicorn==23.0.0
