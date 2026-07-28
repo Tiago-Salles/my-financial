@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.db.models import Sum, Q, Count
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 from datetime import datetime, timedelta
 from decimal import Decimal
 from .models import (
@@ -35,6 +36,13 @@ from .serializers import (
     FixedPaymentFilterSerializer,
     APIResponseSerializer
 )
+
+
+def home(request):
+    return Response({
+        'message': _('Welcome'),
+        'dashboard': _('Dashboard'),
+    })
 
 
 class UserFinancialProfileViewSet(viewsets.ModelViewSet):
