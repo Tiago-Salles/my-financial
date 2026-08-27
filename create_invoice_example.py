@@ -93,8 +93,6 @@ def create_example_data():
     # Fixed payment status
     fixed_payment_status = PaymentStatus.objects.create(
         fixed_payment=fixed_payment,
-        payment_type='fixed',
-        month_year=current_date.replace(day=1),
         due_date=current_date + timedelta(days=15),
         status='pending',
         expected_amount=fixed_payment.amount,
@@ -104,8 +102,6 @@ def create_example_data():
     # Variable payment status
     variable_payment_status = PaymentStatus.objects.create(
         variable_payment=variable_payment,
-        payment_type='variable',
-        month_year=current_date.replace(day=1),
         due_date=current_date + timedelta(days=5),
         status='pending',
         expected_amount=variable_payment.total_amount_with_fees,
@@ -115,8 +111,6 @@ def create_example_data():
     # Credit card invoice payment status
     invoice_payment_status = PaymentStatus.objects.create(
         credit_card_invoice=invoice,
-        payment_type='credit_card',
-        month_year=current_date.replace(day=1),
         due_date=end_date + timedelta(days=10),  # Due 10 days after invoice end
         status='pending',
         expected_amount=invoice.total_amount,

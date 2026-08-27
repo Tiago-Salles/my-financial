@@ -345,7 +345,6 @@ class PaymentStatusSerializerTest(TestCase):
         
         self.assertEqual(data['id'], status_obj.id)
         self.assertEqual(data['payment_type'], status_obj.payment_type)
-        self.assertEqual(data['month_year'], status_obj.month_year.isoformat())
         self.assertEqual(data['due_date'], status_obj.due_date.isoformat())
         self.assertEqual(data['status'], status_obj.status)
         self.assertEqual(data['is_paid'], status_obj.is_paid)
@@ -363,7 +362,6 @@ class PaymentStatusSerializerTest(TestCase):
         data = {
             'fixed_payment': fixed_payment.id,
             'payment_type': 'fixed',
-            'month_year': '2024-01-01',
             'due_date': '2024-01-15',
             'status': 'pending',
             'is_paid': False,
@@ -377,7 +375,6 @@ class PaymentStatusSerializerTest(TestCase):
         status_obj = serializer.save()
         self.assertEqual(status_obj.fixed_payment, fixed_payment)
         self.assertEqual(status_obj.payment_type, 'fixed')
-        self.assertEqual(status_obj.month_year, date(2024, 1, 1))
         self.assertEqual(status_obj.due_date, date(2024, 1, 15))
         self.assertEqual(status_obj.status, 'pending')
         self.assertFalse(status_obj.is_paid)

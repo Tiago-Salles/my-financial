@@ -39,17 +39,15 @@ def create_payment_status_records():
             # Skip if payment status already exists
             if PaymentStatus.objects.filter(
                 fixed_payment=payment,
-                month_year=month_date
+                due_date=month_date + timedelta(days=1)
             ).exists():
                 continue
             
             # Create payment status
             status = FixedPaymentStatusFactory(
                 fixed_payment=payment,
-                month_year=month_date,
                 due_date=month_date + timedelta(days=random.randint(1, 15)),
                 status=random.choice(['pending', 'paid', 'overdue']),
-                is_paid=random.choice([True, False]),
                 notes=random.choice([
                     'Payment scheduled',
                     'Payment completed',
@@ -67,17 +65,15 @@ def create_payment_status_records():
         # Skip if payment status already exists
         if PaymentStatus.objects.filter(
             variable_payment=payment,
-            month_year=month_date
+            due_date=payment.date
         ).exists():
             continue
         
         # Create payment status
         status = VariablePaymentStatusFactory(
             variable_payment=payment,
-            month_year=month_date,
             due_date=payment.date,
             status='paid',  # Variable payments are usually already paid
-            is_paid=True,
             paid_date=payment.date,
             notes='Payment completed'
         )

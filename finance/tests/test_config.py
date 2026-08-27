@@ -324,7 +324,6 @@ class TestAssertions:
         """Assert that a payment status is valid."""
         test_case.assertIsNotNone(status_obj.id)
         test_case.assertIn(status_obj.payment_type, TestConfig.TEST_PAYMENT_TYPES)
-        test_case.assertIsInstance(status_obj.month_year, date)
         test_case.assertIsInstance(status_obj.due_date, date)
         test_case.assertIn(status_obj.status, TestConfig.TEST_STATUSES)
         test_case.assertIsInstance(status_obj.is_paid, bool)

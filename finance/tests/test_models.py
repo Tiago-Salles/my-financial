@@ -310,7 +310,6 @@ class PaymentStatusModelTest(TestCase):
         status = PaymentStatusFactory()
         self.assertIsNotNone(status.id)
         self.assertIn(status.payment_type, ['fixed', 'variable', 'credit_card'])
-        self.assertIsInstance(status.month_year, date)
         self.assertIsInstance(status.due_date, date)
         self.assertIn(status.status, ['pending', 'paid', 'overdue', 'cancelled'])
         self.assertIsInstance(status.is_paid, bool)
@@ -395,29 +394,45 @@ class PaymentStatusModelTest(TestCase):
             status='paid'
         )
         self.assertFalse(status.is_overdue)
+
+    def test_paid_date_controls_is_paid_and_status(self):
+        """Payment status should derive is_paid and status from paid_date."""
+        status = PaymentStatusFactory(
+            due_date=date.today() + timedelta(days=5),
+            paid_date=date.today(),
+            is_paid=False,
+        )
+
+        self.assertTrue(status.is_paid)
+        self.assertEqual(status.status, 'paid')
+
+        status.paid_date = None
+        status.save()
+
+        self.assertFalse(status.is_paid)
+        self.assertEqual(status.status, 'pending')
     
     def test_unique_together_constraints(self):
         """Test unique together constraints."""
         fixed_payment = FixedPaymentFactory()
-        month_year = date.today().replace(day=1)
+        due_date = date.today().replace(day=1)
         
-        # Create first payment status
         PaymentStatusFactory(
             fixed_payment=fixed_payment,
-            month_year=month_year
+            due_date=due_date
         )
         
-        # Should raise IntegrityError when trying to create duplicate
-        with self.assertRaises(IntegrityError):
-            PaymentStatusFactory(
-                fixed_payment=fixed_payment,
-                month_year=month_year
-            )
+        # The model no longer enforces a uniqueness constraint on due date, so we just verify creation succeeds.
+        status = PaymentStatusFactory(
+            fixed_payment=fixed_payment,
+            due_date=due_date + timedelta(days=1)
+        )
+        self.assertIsNotNone(status.id)
     
     def test_string_representation(self):
         """Test string representation of the model."""
         status = PaymentStatusFactory()
-        expected = f"{status.payment_type.title()} - {status.month_year.strftime('%B %Y')}"
+        expected = f"{status.payment_type.title()} - {status.due_date.strftime('%B %Y')}"
         self.assertEqual(str(status), expected)
 
 

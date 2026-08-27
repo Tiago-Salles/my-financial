@@ -463,8 +463,6 @@ class PaymentStatusViewSetTest(BaseViewTest):
         fixed_payment = FixedPaymentFactory()
         data = {
             'fixed_payment': fixed_payment.id,
-            'payment_type': 'fixed',
-            'month_year': '2024-01-01',
             'due_date': '2024-01-15',
             'status': 'pending',
             'is_paid': False,
@@ -526,8 +524,8 @@ class PaymentStatusViewSetTest(BaseViewTest):
     def test_by_month_action(self):
         """Test by_month action to get payment statuses by month."""
         month_year = date.today().replace(day=1)
-        month_statuses = PaymentStatusFactory.create_batch(3, month_year=month_year)
-        PaymentStatusFactory.create_batch(2, month_year=month_year - timedelta(days=30))
+        month_statuses = PaymentStatusFactory.create_batch(3, due_date=month_year)
+        PaymentStatusFactory.create_batch(2, due_date=month_year - timedelta(days=30))
         
         url = reverse('paymentstatus-by-month')
         response = self.client.get(url, {

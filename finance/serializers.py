@@ -129,8 +129,10 @@ class CreditCardInvoiceDetailSerializer(CreditCardInvoiceSerializer):
 class PaymentStatusSerializer(serializers.ModelSerializer):
     """Serializer for payment status tracking."""
     
+    payment_type = serializers.ReadOnlyField()
     payment_description = serializers.ReadOnlyField()
     payment_country = serializers.ReadOnlyField()
+    is_paid = serializers.ReadOnlyField()
     is_overdue = serializers.ReadOnlyField()
     credit_card_invoice = CreditCardInvoiceSerializer(read_only=True)
     credit_card_invoice_id = serializers.PrimaryKeyRelatedField(
@@ -144,7 +146,7 @@ class PaymentStatusSerializer(serializers.ModelSerializer):
         model = PaymentStatus
         fields = [
             'id', 'fixed_payment', 'variable_payment', 'credit_card_invoice', 'credit_card_invoice_id',
-            'payment_type', 'month_year', 'due_date', 'status', 'is_paid', 'paid_date',
+            'payment_type', 'due_date', 'status', 'is_paid', 'paid_date',
             'expected_amount', 'actual_amount', 'currency', 'notes',
             'payment_description', 'payment_country', 'is_overdue',
             'created_at', 'updated_at'

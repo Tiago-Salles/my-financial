@@ -305,9 +305,9 @@ class PaymentStatusViewSet(viewsets.ModelViewSet):
     serializer_class = PaymentStatusSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['payment_description', 'notes']
-    ordering_fields = ['due_date', 'month_year', 'status', 'is_paid', 'created_at']
-    ordering = ['due_date', 'payment_type']
+    search_fields = ['notes', 'fixed_payment__description', 'variable_payment__description']
+    ordering_fields = ['due_date', 'status', 'created_at']
+    ordering = ['due_date']
     
     def get_serializer_class(self):
         if self.action == 'retrieve':
@@ -351,8 +351,8 @@ class PaymentStatusViewSet(viewsets.ModelViewSet):
         
         if month and year:
             queryset = queryset.filter(
-                month_year__year=year,
-                month_year__month=month
+                due_date__year=year,
+                due_date__month=month
             )
         
         serializer = self.get_serializer(queryset, many=True)

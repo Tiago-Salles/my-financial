@@ -1,164 +1,271 @@
 # Personal Financial Tracker - Makefile
-# Usage: make <target>
+# Every target runs through docker compose. Usage: make <target> [ARGS="..."]
 
-.PHONY: help install setup db-start db-stop app-up migrate superuser run test clean populate populate-minimal shell check format lint backup restore status logs reset quick
+SHELL := /bin/bash
+.DEFAULT_GOAL := help
 
-# Default target
-help:
-	@echo "Personal Financial Tracker - Available Commands:"
+# --- Configuration ---------------------------------------------------------
+COMPOSE      ?= docker compose
+APP          ?= app
+DB           ?= db
+NGINX        ?= nginx
+SERVICE      ?=
+ARGS         ?=
+BACKUP_DIR   ?= backups
+
+# Pull DB credentials (and everything else) from .env when it exists so the
+# Makefile never hardcodes values that already live in one place.
+ifneq (,$(wildcard .env))
+include .env
+export
+endif
+
+DB_NAME ?= my_financial_db
+DB_USER ?= my_financial_user
+
+# Run a command in the app service: exec into it when it is up, otherwise spin
+# up a throwaway container so targets like `make test` work with nothing running.
+# Used as a recipe prefix:  $(IN_APP) python manage.py migrate
+IN_APP = @if [ -n "$$($(COMPOSE) ps -q --status running $(APP) 2>/dev/null)" ]; then \
+		set -- exec -T; \
+	else \
+		echo "ℹ️  $(APP) is not running - using a one-off container"; \
+		set -- run --rm; \
+	fi; $(COMPOSE) "$$@" $(APP)
+
+MANAGE = python manage.py
+
+# --- Help ------------------------------------------------------------------
+.PHONY: help
+help: ## Show this help
+	@echo "Personal Financial Tracker - docker compose targets"
 	@echo ""
-	@echo "Setup & Installation:"
-	@echo "  install      - Build the Docker app image"
-	@echo "  setup        - Start services, run migrations and create the admin user"
-	@echo "  db-start     - Start the PostgreSQL container"
-	@echo "  db-stop      - Stop and remove containers"
+	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
+		| sort \
+		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 	@echo ""
-	@echo "Development:"
-	@echo "  run          - Start the application container"
-	@echo "  migrate      - Run database migrations"
-	@echo "  superuser    - Create admin superuser"
-	@echo "  shell        - Open Django shell in the app container"
-	@echo "  check        - Run Django system checks"
-	@echo ""
-	@echo "Data Management:"
-	@echo "  populate     - Populate database with realistic sample data"
-	@echo "  populate-minimal - Populate database with minimal test data"
-	@echo "  clean        - Clear all data from database"
-	@echo ""
-	@echo "Code Quality:"
-	@echo "  format       - Format code with black"
-	@echo "  lint         - Run linting checks"
-	@echo ""
-	@echo "Database:"
-	@echo "  backup       - Create database backup"
-	@echo "  restore      - Restore database from backup"
+	@echo "Examples:"
+	@echo "  make up                        # start the whole stack"
+	@echo "  make logs SERVICE=app          # follow one service"
+	@echo "  make manage ARGS=\"showmigrations\""
+	@echo "  make test ARGS=\"finance.tests.test_models\""
+	@echo "  make restore file=backups/backup_20250101_120000.sql"
 
-# Variables
-COMPOSE = docker compose
-APP_SERVICE = app
-DB_SERVICE = db
-
-# Installation
-install:
-	@echo "📦 Building Docker app image..."
-	@$(COMPOSE) build $(APP_SERVICE)
-	@echo "✅ Docker image built successfully"
-
-# Database management
-db-start:
-	@echo "🐘 Starting PostgreSQL container..."
-	@$(COMPOSE) up -d $(DB_SERVICE)
-	@echo "✅ Database container started"
-
-db-stop:
-	@echo "🐘 Stopping containers..."
-	@$(COMPOSE) down
-	@echo "✅ Containers stopped"
-
-app-up:
-	@echo "🚀 Starting application container..."
-	@$(COMPOSE) up -d --build $(APP_SERVICE)
-
-# Django management
-migrate:
-	@echo "🔄 Running database migrations..."
-	@$(COMPOSE) exec -T $(APP_SERVICE) python manage.py migrate
-	@echo "✅ Migrations completed successfully"
-
-superuser:
-	@echo "👤 Creating superuser..."
-	@$(COMPOSE) exec -T $(APP_SERVICE) python manage.py shell -c "from django.contrib.auth.models import User; User.objects.filter(username='admin').exists() or User.objects.create_superuser('admin', 'admin@example.com', 'admin')"
-	@$(COMPOSE) exec -T $(APP_SERVICE) python manage.py shell -c "from django.contrib.auth.models import User; u = User.objects.get(username='admin'); u.set_password('admin'); u.save(); print('Password set to: admin')"
-	@echo "✅ Superuser created: admin/admin"
-
-run:
-	@echo "🚀 Starting application container in the foreground..."
-	@$(COMPOSE) up --build $(APP_SERVICE)
-
-shell:
-	@echo "🐍 Opening Django shell..."
-	@$(COMPOSE) exec $(APP_SERVICE) python manage.py shell
-
-check:
-	@echo "🔍 Running system checks..."
-	@$(COMPOSE) exec -T $(APP_SERVICE) python manage.py check
-
-# Data management
-populate:
-	@echo "📊 Populating database with realistic data..."
-	@$(COMPOSE) exec -T $(APP_SERVICE) python populate_data.py
-	@echo "✅ Data population completed"
-
-populate-minimal:
-	@echo "🔧 Populating database with minimal test data..."
-	@$(COMPOSE) exec -T $(APP_SERVICE) python populate_data.py --minimal
-	@echo "✅ Minimal data population completed"
-
-clean:
-	@echo "🗑️  Clearing all data..."
-	@$(COMPOSE) exec -T $(APP_SERVICE) python manage.py shell -c "from finance.models import *; VariablePayment.objects.all().delete(); FixedPayment.objects.all().delete(); ExchangeRate.objects.all().delete(); CreditCard.objects.all().delete(); UserFinancialProfile.objects.all().delete(); print('All data cleared')"
-	@echo "✅ Database cleared successfully"
-
-# Complete setup
-setup: install app-up migrate superuser
-	@echo ""
-	@echo "🎉 Setup completed successfully!"
-	@echo "🌐 Access the application at: http://127.0.0.1:8000/"
-	@echo "👤 Login with: admin/admin"
-	@echo ""
-	@echo "Next steps:"
-	@echo "  make run          - Keep the app running in the foreground"
-	@echo "  make populate     - Add sample data"
-	@echo "  make help         - Show all available commands"
-
-# Code quality
-format:
-	@echo "🎨 Formatting code..."
-	@$(COMPOSE) exec -T $(APP_SERVICE) python -m black .
-	@echo "✅ Code formatted successfully"
-
-lint:
-	@echo "🔍 Running linting checks..."
-	@$(COMPOSE) exec -T $(APP_SERVICE) python -m flake8 .
-	@echo "✅ Linting completed"
-
-# Database backup/restore
-backup:
-	@echo "💾 Creating database backup..."
-	@docker compose exec -T db pg_dump -U my_financial_user my_financial_db > backup_$(shell date +%Y%m%d_%H%M%S).sql
-	@echo "✅ Backup created successfully"
-
-restore:
-	@echo "📥 Restoring database from backup..."
-	@if [ -z "$(file)" ]; then \
-		echo "Usage: make restore file=backup_file.sql"; \
-		exit 1; \
+# --- Environment -----------------------------------------------------------
+.PHONY: env
+env: ## Create .env from env.example if missing
+	@if [ -f .env ]; then \
+		echo "✅ .env already exists"; \
+	else \
+		cp env.example .env; \
+		echo "✅ .env created from env.example - review the values"; \
 	fi
-	@docker compose exec -T -i db psql -U my_financial_user my_financial_db < $(file)
-	@echo "✅ Database restored successfully"
 
-# Development shortcuts
-dev: run
-	@echo "🚀 Development server started at http://127.0.0.1:8000/"
+.PHONY: config
+config: ## Render the resolved compose configuration
+	@$(COMPOSE) config
 
-test-setup: setup populate
-	@echo "🧪 Test environment ready with sample data"
+# --- Stack lifecycle -------------------------------------------------------
+.PHONY: build
+build: ## Build images (SERVICE=app to limit)
+	@echo "📦 Building images..."
+	@$(COMPOSE) build $(SERVICE)
+	@echo "✅ Build complete"
 
-# Utility commands
-status:
-	@echo "📊 Project Status:"
-	@echo "  Database: $$(docker compose ps db | grep -q 'Up' && echo 'Running' || echo 'Stopped')"
-	@echo "  Migrations: $$(docker compose exec -T app python manage.py showmigrations | grep -c '\[X\]' 2>/dev/null || echo '0')/$$(docker compose exec -T app python manage.py showmigrations | grep -c '\[ \]' 2>/dev/null || echo '0') applied"
-	@echo "  Records:"
-	@docker compose exec -T app python manage.py shell -c "from finance.models import *; print('    User Profiles:', UserFinancialProfile.objects.count()); print('    Credit Cards:', CreditCard.objects.count()); print('    Exchange Rates:', ExchangeRate.objects.count()); print('    Fixed Payments:', FixedPayment.objects.count()); print('    Variable Payments:', VariablePayment.objects.count())"
+.PHONY: pull
+pull: ## Pull upstream images
+	@$(COMPOSE) pull $(SERVICE)
 
-logs:
-	@echo "📋 Container logs:"
-	@docker compose logs db app
+.PHONY: up
+up: env ## Start the stack in the background
+	@echo "🚀 Starting services..."
+	@$(COMPOSE) up -d $(SERVICE)
+	@echo "✅ Services started"
 
-reset: clean populate
-	@echo "🔄 Database reset with fresh sample data"
+.PHONY: up-build
+up-build: env ## Rebuild and start the stack in the background
+	@$(COMPOSE) up -d --build $(SERVICE)
 
-# Quick development workflow
-quick: app-up migrate run
-	@echo "⚡ Quick start completed - server running at http://127.0.0.1:8000/"
+.PHONY: run
+run: env ## Start the stack in the foreground (Ctrl-C to stop)
+	@$(COMPOSE) up --build $(SERVICE)
+
+.PHONY: down
+down: ## Stop and remove containers
+	@echo "🛑 Stopping services..."
+	@$(COMPOSE) down
+	@echo "✅ Services stopped"
+
+.PHONY: down-volumes
+down-volumes: ## Stop containers and DELETE volumes (destroys the database)
+	@echo "⚠️  This removes the postgres volume."
+	@read -p "Type 'yes' to continue: " ans; [ "$$ans" = "yes" ] || { echo "Aborted"; exit 1; }
+	@$(COMPOSE) down -v
+	@echo "✅ Containers and volumes removed"
+
+.PHONY: stop start restart
+stop: ## Stop containers without removing them
+	@$(COMPOSE) stop $(SERVICE)
+
+start: ## Start previously stopped containers
+	@$(COMPOSE) start $(SERVICE)
+
+restart: ## Restart services
+	@$(COMPOSE) restart $(SERVICE)
+
+.PHONY: ps
+ps: ## Show container status
+	@$(COMPOSE) ps
+
+.PHONY: logs
+logs: ## Follow logs (SERVICE=app to limit)
+	@$(COMPOSE) logs -f --tail=100 $(SERVICE)
+
+.PHONY: sh
+sh: ## Open a shell in the app container
+	@$(COMPOSE) exec $(APP) bash || $(COMPOSE) exec $(APP) sh
+
+.PHONY: db-shell
+db-shell: ## Open psql in the database container
+	@$(COMPOSE) exec $(DB) psql -U $(DB_USER) -d $(DB_NAME)
+
+.PHONY: nginx-reload
+nginx-reload: ## Reload the nginx configuration
+	@$(COMPOSE) exec $(NGINX) nginx -s reload
+	@echo "✅ nginx reloaded"
+
+# --- Database readiness ----------------------------------------------------
+.PHONY: db-up wait-db
+db-up: ## Start only the database service
+	@$(COMPOSE) up -d $(DB)
+
+wait-db: db-up ## Block until postgres accepts connections
+	@echo "⏳ Waiting for postgres..."
+	@for i in $$(seq 1 60); do \
+		if $(COMPOSE) exec -T $(DB) pg_isready -U $(DB_USER) -d $(DB_NAME) >/dev/null 2>&1; then \
+			echo "✅ Database ready"; exit 0; \
+		fi; \
+		sleep 1; \
+	done; \
+	echo "❌ Database not ready after 60s"; exit 1
+
+# --- Django ----------------------------------------------------------------
+.PHONY: manage
+manage: ## Run any manage.py command: make manage ARGS="showmigrations"
+	$(IN_APP) $(MANAGE) $(ARGS)
+
+.PHONY: migrate
+migrate: wait-db ## Apply database migrations
+	@echo "🔄 Applying migrations..."
+	$(IN_APP) $(MANAGE) migrate
+	@echo "✅ Migrations applied"
+
+.PHONY: makemigrations
+makemigrations: ## Create new migrations
+	$(IN_APP) $(MANAGE) makemigrations $(ARGS)
+
+.PHONY: superuser
+superuser: ## Create the admin/admin superuser (idempotent)
+	@echo "👤 Ensuring superuser exists..."
+	$(IN_APP) $(MANAGE) shell -c "from django.contrib.auth.models import User; u, _ = User.objects.get_or_create(username='admin', defaults={'email': 'admin@example.com'}); u.is_staff = u.is_superuser = True; u.set_password('admin'); u.save(); print('superuser ready: admin/admin')"
+
+.PHONY: shell
+shell: ## Open the Django shell
+	@$(COMPOSE) exec $(APP) $(MANAGE) shell
+
+.PHONY: check
+check: ## Run Django system checks
+	$(IN_APP) $(MANAGE) check
+
+.PHONY: collectstatic
+collectstatic: ## Collect static files
+	$(IN_APP) $(MANAGE) collectstatic --noinput
+
+.PHONY: test
+test: wait-db ## Run the test suite (ARGS to target specific tests)
+	@echo "🧪 Running tests..."
+	$(IN_APP) $(MANAGE) test $(ARGS)
+
+# --- Setup workflows -------------------------------------------------------
+.PHONY: setup
+setup: env build up wait-db migrate superuser ## Full first-time setup
+	@echo ""
+	@echo "🎉 Setup complete"
+	@echo "🌐 App:   http://127.0.0.1:8000/"
+	@echo "🌐 Nginx: http://127.0.0.1/"
+	@echo "👤 Login: admin/admin"
+	@echo ""
+	@echo "Next: make populate | make logs | make help"
+
+.PHONY: dev
+dev: up wait-db migrate ## Start the stack and follow app logs
+	@$(COMPOSE) logs -f $(APP)
+
+.PHONY: rebuild
+rebuild: ## Rebuild images from scratch and restart
+	@$(COMPOSE) build --no-cache $(SERVICE)
+	@$(COMPOSE) up -d $(SERVICE)
+
+# --- Data ------------------------------------------------------------------
+.PHONY: populate
+populate: ## Populate the database with realistic sample data
+	$(IN_APP) python populate_data.py
+
+.PHONY: populate-minimal
+populate-minimal: ## Populate the database with minimal test data
+	$(IN_APP) python populate_data.py --minimal
+
+.PHONY: clean-data
+clean-data: ## Delete all finance records (keeps schema and users)
+	@echo "⚠️  This deletes all finance records."
+	@read -p "Type 'yes' to continue: " ans; [ "$$ans" = "yes" ] || { echo "Aborted"; exit 1; }
+	$(IN_APP) $(MANAGE) shell -c "from finance.models import *; VariablePayment.objects.all().delete(); FixedPayment.objects.all().delete(); ExchangeRate.objects.all().delete(); CreditCard.objects.all().delete(); UserFinancialProfile.objects.all().delete(); print('All data cleared')"
+
+.PHONY: reset
+reset: clean-data populate ## Wipe data and repopulate
+
+.PHONY: reset-db
+reset-db: down-volumes up wait-db migrate superuser ## Destroy the volume and rebuild the database
+
+# --- Code quality ----------------------------------------------------------
+.PHONY: format
+format: ## Format code with black
+	$(IN_APP) python -m black .
+
+.PHONY: lint
+lint: ## Lint with flake8
+	$(IN_APP) python -m flake8 .
+
+# --- Backup / restore ------------------------------------------------------
+.PHONY: backup
+backup: ## Dump the database to backups/
+	@mkdir -p $(BACKUP_DIR)
+	@f=$(BACKUP_DIR)/backup_$$(date +%Y%m%d_%H%M%S).sql; \
+	$(COMPOSE) exec -T $(DB) pg_dump -U $(DB_USER) $(DB_NAME) > $$f && \
+	echo "✅ Backup written to $$f"
+
+.PHONY: restore
+restore: ## Restore from a dump: make restore file=backups/<file>.sql
+	@if [ -z "$(file)" ]; then echo "Usage: make restore file=backups/backup_*.sql"; exit 1; fi
+	@if [ ! -f "$(file)" ]; then echo "❌ No such file: $(file)"; exit 1; fi
+	@$(COMPOSE) exec -T $(DB) psql -U $(DB_USER) -d $(DB_NAME) < $(file)
+	@echo "✅ Restored from $(file)"
+
+# --- Status ----------------------------------------------------------------
+.PHONY: status
+status: ## Show container status, migrations and record counts
+	@echo "📊 Services:"
+	@$(COMPOSE) ps
+	@if [ -z "$$($(COMPOSE) ps -q --status running $(APP) 2>/dev/null)" ]; then \
+		echo ""; echo "ℹ️  $(APP) is not running - start it with 'make up' for migration and record counts"; \
+		exit 0; \
+	fi; \
+	echo ""; echo "📊 Migrations:"; \
+	$(COMPOSE) exec -T $(APP) $(MANAGE) showmigrations \
+		| awk '/\[X\]/{a++} /\[ \]/{p++} END{printf "  %d applied, %d pending\n", a, p}'; \
+	echo ""; echo "📊 Records:"; \
+	$(COMPOSE) exec -T $(APP) $(MANAGE) shell -c "from finance.models import *; print('  User Profiles:', UserFinancialProfile.objects.count()); print('  Credit Cards:', CreditCard.objects.count()); print('  Exchange Rates:', ExchangeRate.objects.count()); print('  Fixed Payments:', FixedPayment.objects.count()); print('  Variable Payments:', VariablePayment.objects.count())"
+
+.PHONY: prune
+prune: ## Remove stopped containers, dangling images and unused build cache
+	@docker system prune -f

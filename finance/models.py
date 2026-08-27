@@ -179,83 +179,85 @@ class PaymentStatus(models.Model):
     Model to track payment status for monthly payments.
     This serves as a monthly checklist of payments to be made.
     """
-    PAYMENT_TYPE_CHOICES = [
-        ('fixed', 'Fixed Payment'),
-        ('variable', 'Variable Payment'),
-        ('credit_card', 'Credit Card Payment'),
-    ]
-    
     STATUS_CHOICES = [
         ('pending', 'Pending'),
         ('paid', 'Paid'),
         ('overdue', 'Overdue'),
         ('cancelled', 'Cancelled'),
     ]
-    
+
     # Reference to the actual payment
     fixed_payment = models.ForeignKey(FixedPayment, on_delete=models.CASCADE, null=True, blank=True)
     variable_payment = models.ForeignKey(VariablePayment, on_delete=models.CASCADE, null=True, blank=True)
     credit_card_invoice = models.ForeignKey('CreditCardInvoice', on_delete=models.CASCADE, null=True, blank=True, related_name='payment_statuses')
-    
+
     # Payment tracking fields
-    payment_type = models.CharField(max_length=15, choices=PAYMENT_TYPE_CHOICES)
-    month_year = models.DateField(help_text="Month and year this payment is due (e.g., 2024-01-01 for January 2024)")
     due_date = models.DateField(help_text="Specific due date for this payment")
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
-    is_paid = models.BooleanField(default=False, help_text="Checkbox to mark as paid")
     paid_date = models.DateField(null=True, blank=True)
     notes = models.TextField(blank=True, null=True, help_text="Additional notes about this payment")
-    
+
     # Amount tracking (in case the original payment amount changes)
     expected_amount = models.DecimalField(max_digits=10, decimal_places=2)
     actual_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     currency = models.CharField(max_length=3, choices=VariablePayment.CURRENCY_CHOICES)
-    
+
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     class Meta:
         verbose_name = 'Payment Status'
         verbose_name_plural = 'Payment Statuses'
-        unique_together = [
-            ['fixed_payment', 'month_year'],
-            ['variable_payment', 'month_year'],
-            ['credit_card_invoice', 'month_year']
-        ]
-        ordering = ['due_date', 'payment_type']
-    
-    def save(self, *args, **kwargs):
-        # Set payment type based on which payment is linked
+        ordering = ['due_date']
+
+    def _resolve_payment_details(self):
         if self.fixed_payment:
-            self.payment_type = 'fixed'
             self.expected_amount = self.fixed_payment.amount
             self.currency = self.fixed_payment.currency
         elif self.variable_payment:
-            self.payment_type = 'variable'
             self.expected_amount = self.variable_payment.amount
             self.currency = self.variable_payment.currency
         elif self.credit_card_invoice:
-            self.payment_type = 'credit_card'
             self.expected_amount = self.credit_card_invoice.total_with_fees
             self.currency = self.credit_card_invoice.credit_card.currency
-        
-        # Update status based on is_paid
-        if self.is_paid:
+
+    def _refresh_payment_state(self):
+        if self.paid_date:
             self.status = 'paid'
-            if not self.paid_date:
-                self.paid_date = timezone.now().date()
-        else:
-            if self.paid_date:
-                self.paid_date = None
-            # Check if overdue
-            if self.due_date < timezone.now().date():
-                self.status = 'overdue'
-            else:
-                self.status = 'pending'
-        
+            return
+
+        if self.due_date and self.due_date < timezone.now().date():
+            self.status = 'overdue'
+            return
+
+        self.status = 'pending'
+
+    def save(self, *args, **kwargs):
+        self._resolve_payment_details()
+        self._refresh_payment_state()
+
         super().save(*args, **kwargs)
-    
+
+    @property
+    def is_paid(self):
+        """Check if the payment has been made."""
+        if self.paid_date:
+            return True
+
+        return False
+
+    @property
+    def payment_type(self):
+        """Determine the type of payment this status is linked to."""
+        if self.fixed_payment:
+            return 'fixed'
+        elif self.variable_payment:
+            return 'variable'
+        elif self.credit_card_invoice:
+            return 'credit_card'
+        return 'unknown'
+
     @property
     def payment_description(self):
         """Get the description of the linked payment"""
@@ -264,9 +266,9 @@ class PaymentStatus(models.Model):
         elif self.variable_payment:
             return self.variable_payment.description
         elif self.credit_card_invoice:
-            return f"Credit Card Invoice - {self.credit_card_invoice.credit_card.cardholder_name}"
+            return f"{self.credit_card_invoice.credit_card.cardholder_name} Credit Card"
         return "Unknown Payment"
-    
+
     @property
     def payment_country(self):
         """Get the country of the linked payment"""
@@ -277,17 +279,16 @@ class PaymentStatus(models.Model):
         elif self.credit_card_invoice:
             return self.credit_card_invoice.credit_card.issuer_country
         return "Unknown"
-    
+
     @property
     def is_overdue(self):
         """Check if payment is overdue"""
-        return self.due_date < timezone.now().date() and not self.is_paid
-    
+        return self.due_date and self.due_date < timezone.now().date() and not self.is_paid
+
     def __str__(self):
         payment_desc = self.payment_description
-        month_year = self.month_year.strftime('%B %Y')
-        status = self.get_status_display()
-        return f"{payment_desc} - {month_year} ({status})"
+        due_date = self.due_date.strftime('%B %Y')
+        return f"{self.payment_type.title()} - {due_date} - {payment_desc} ({self.status})"
 
 
 class CreditCardInvoice(models.Model):

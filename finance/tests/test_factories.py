@@ -316,7 +316,6 @@ class PaymentStatusFactoryTest(TestCase):
         self.assertIsInstance(status_obj, PaymentStatus)
         self.assertIsNotNone(status_obj.id)
         self.assertIn(status_obj.payment_type, ['fixed', 'variable', 'credit_card'])
-        self.assertIsInstance(status_obj.month_year, date)
         self.assertIsInstance(status_obj.due_date, date)
         self.assertIn(status_obj.status, ['pending', 'paid', 'overdue', 'cancelled'])
         self.assertIsInstance(status_obj.is_paid, bool)
@@ -328,9 +327,9 @@ class PaymentStatusFactoryTest(TestCase):
         statuses = PaymentStatusFactory.create_batch(10)
         
         self.assertEqual(len(statuses), 10)
-        # Check that statuses have different months
-        months = [s.month_year for s in statuses]
-        self.assertEqual(len(set(months)), 10)
+        # Check that statuses have different due dates
+        due_dates = [s.due_date for s in statuses]
+        self.assertEqual(len(set(due_dates)), 10)
     
     def test_fixed_payment_status_factory(self):
         """Test fixed payment status factory."""
